@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Household Finance</title>
+<style>
+:root{--bg:#eef1ee;--card:#fff;--ink:#1d2a24;--mute:#66736b;--line:#d9dfda;--in:#1f7a4d;--out:#b4472f;--acc:#17483a;--warn:#c98a12}
+@media(prefers-color-scheme:dark){:root{--bg:#121816;--card:#1b2420;--ink:#e6ece8;--mute:#92a099;--line:#2d3a34;--in:#4bbf86;--out:#e27a5f;--acc:#4bbf86;--warn:#e0a93a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:600;margin:0}
+button,input,select{font:inherit;color:inherit}
+input,select{width:100%;padding:.55rem .7rem;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+button{cursor:pointer;border:0;border-radius:6px;padding:.55rem 1rem;background:var(--acc);color:#fff;font-weight:600}
+button.ghost{background:none;color:var(--mute);border:1px solid var(--line)}button.x{background:none;color:var(--mute);padding:.1rem .5rem}
+:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.wrap{max-width:980px;margin:0 auto;padding:1rem}
+header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:.5rem 0 1rem}
+nav{display:flex;gap:.25rem;border-bottom:1px solid var(--line);margin-bottom:1.25rem;overflow-x:auto}
+nav button{background:none;color:var(--mute);border-radius:0;border-bottom:3px solid transparent}
+nav button.on{color:var(--ink);border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1.1rem;margin-bottom:1rem}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.form{display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end}
+label{font-size:.85rem;color:var(--mute);display:block}
+.big{font:600 2.6rem/1.1 Georgia,serif}.in{color:var(--in)}.out{color:var(--out)}.mute{color:var(--mute)}
+.bar{height:10px;background:var(--line);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--in)}
+.bar.warn i{background:var(--warn)}.bar.over i{background:var(--out)}
+table{width:100%;border-collapse:collapse}td,th{padding:.5rem .4rem;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mute);font-weight:500;font-size:.85rem}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.row{margin:.7rem 0}.row>div:first-child{display:flex;justify-content:space-between}
+.trend{display:flex;gap:.6rem;align-items:flex-end;height:140px}.trend div{flex:1;text-align:center;font-size:.75rem}
+.trend span{display:inline-block;width:42%;min-height:2px;vertical-align:bottom}
+#msg{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.6rem 1rem;border-radius:6px;display:none}
+.auth{max-width:420px;margin:8vh auto}.auth .form{grid-template-columns:1fr}
+</style></head><body><div class="wrap" id="app"></div><div id="msg" role="status"></div>
+<script>
+const $=s=>document.querySelector(s),app=$("#app");
+const K=n=>"KES "+Number(n||0).toLocaleString("en-KE",{minimumFractionDigits:0,maximumFractionDigits:2});
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const today=()=>new Date().toISOString().slice(0,10);
+let me,tab="overview",month=today().slice(0,7),authMode="login";
+const CATS={expense:["Food","Rent","Transport","Utilities","School fees","Airtime & data","Health","Entertainment","Savings","Other"],income:["Salary","Business","Casual work","Gift","Other"]};
+async function api(p,body){const r=await fetch("/api/"+p,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.error||"Request failed"),{status:r.status});return d}
+function toast(t){const m=$("#msg");m.textContent=t;m.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>m.style.display="none",3000)}
+const val=id=>$("#"+id).value;
+async function act(fn,ok){try{await fn();if(ok)toast(ok);render()}catch(e){toast(e.message)}}
+
+function authView(){const reg=authMode==="register";
+ app.innerHTML=`<div class="card auth"><h1>Household Finance</h1><p class="mute">Track what comes in, what goes out, and what you are saving for.</p>
+ <div class="form">${reg?`<div><label for="n">Your name</label><input id="n"></div>`:""}
+ <div><label for="e">Email</label><input id="e" type="email" autocomplete="username"></div>
+ <div><label for="p">Password</label><input id="p" type="password" autocomplete="${reg?"new":"current"}-password"></div>
+ ${reg?`<div><label for="hn">New household name</label><input id="hn" placeholder="e.g. Wanjiru family"></div>
+ <div><label for="jc">Or join with a household code</label><input id="jc" placeholder="Ask a household member"></div>`:""}
+ <button id="go">${reg?"Create account":"Sign in"}</button>
+ <button class="ghost" id="sw">${reg?"I already have an account":"Create an account"}</button></div></div>`;
+ $("#sw").onclick=()=>{authMode=reg?"login":"register";authView()};
+ $("#go").onclick=()=>act(async()=>{await api(reg?"register":"login",reg?{name:val("n"),email:val("e"),password:val("p"),household_name:val("hn"),join_code:val("jc")}:{email:val("e"),password:val("p")});me=await api("me");},"");}
+
+async function render(){
+ if(!me){try{me=await api("me")}catch{return authView()}}
+ const tabs=[["overview","Overview"],["transactions","Transactions"],["budgets","Budgets"],["goals","Goals"]];
+ app.innerHTML=`<header><div><h1>${esc(me.household)}</h1><span class="mute">Signed in as ${esc(me.name)} · Join code: <b>${esc(me.join_code)}</b></span></div>
+ <div><input type="month" id="mo" value="${month}" aria-label="Month" style="width:auto"> <button class="ghost" id="out">Sign out</button></div></header>
+ <nav>${tabs.map(([k,l])=>`<button class="${tab===k?"on":""}" data-t="${k}">${l}</button>`).join("")}</nav><main id="main"></main>`;
+ $("#mo").onchange=e=>{month=e.target.value||month;render()};
+ $("#out").onclick=async()=>{await api("logout",{});me=null;authView()};
+ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+ try{await views[tab]()}catch(e){if(e.status===401){me=null;authView()}else toast(e.message)}}
+
+const views={
+async overview(){const s=await api("summary?month="+month),bal=s.income-s.expense,mx=Math.max(1,...s.trend.flatMap(t=>[t.income,t.expense])),top=s.categories[0]?.total||1;
+ $("#main").innerHTML=`<div class="grid"><div class="card"><label>Left this month</label><div class="big ${bal<0?"out":"in"}">${K(bal)}</div>
+ <p class="mute" style="margin:.5rem 0 0">${K(s.income)} received, ${K(s.expense)} spent${s.income?` (${Math.round(s.expense/s.income*100)}% of income)`:""}</p></div>
+ <div class="card"><h3>Where the money went</h3>${s.categories.map(c=>`<div class="row"><div><span>${esc(c.category)}</span><span>${K(c.total)}</span></div><div class="bar"><i style="width:${c.total/top*100}%"></i></div></div>`).join("")||'<p class="mute">No spending recorded for this month yet. Add an expense under Transactions.</p>'}</div></div>
+ <div class="card"><h3>Last months</h3><div class="trend">${s.trend.map(t=>`<div><span style="height:${t.income/mx*110}px;background:var(--in)" title="Income ${K(t.income)}"></span> <span style="height:${t.expense/mx*110}px;background:var(--out)" title="Spent ${K(t.expense)}"></span><br>${t.month.slice(2)}</div>`).join("")||'<p class="mute">Your monthly trend appears once you add transactions.</p>'}</div>
+ <p class="mute" style="margin:.5rem 0 0"><b class="in">Green</b> income, <b class="out">red</b> spending.</p></div>`},
+
+async transactions(){const t=await api("transactions?month="+month);
+ $("#main").innerHTML=`<div class="card"><h3>Add a transaction</h3><div class="form">
+ <div><label for="ty">Type</label><select id="ty"><option value="expense">Expense</option><option value="income">Income</option></select></div>
+ <div><label for="am">Amount (KES)</label><input id="am" type="number" min="0" step="0.01"></div>
+ <div><label for="ca">Category</label><input id="ca" list="cl"><datalist id="cl"></datalist></div>
+ <div><label for="dt">Date</label><input id="dt" type="date" value="${today()}"></div>
+ <div><label for="no">Note</label><input id="no" maxlength="200"></div><button id="add">Save transaction</button></div></div>
+ <div class="card"><div style="display:flex;justify-content:space-between"><h3>${month}</h3><a href="/api/export.csv"><button class="ghost">Download all as CSV</button></a></div>
+ <table><tr><th>Date</th><th>Category</th><th>Note</th><th>Who</th><th class="n">Amount</th><th></th></tr>${t.map(r=>`<tr><td>${r.date}</td><td>${esc(r.category)}</td><td>${esc(r.note)}</td><td>${esc(r.member)}</td>
+ <td class="n ${r.type==="income"?"in":"out"}">${r.type==="income"?"+":"−"}${K(r.amount)}</td><td><button class="x" data-d="${r.id}" aria-label="Delete">✕</button></td></tr>`).join("")||'<tr><td colspan="6" class="mute">Nothing recorded this month yet.</td></tr>'}</table></div>`;
+ const fill=()=>$("#cl").innerHTML=CATS[val("ty")].map(c=>`<option>${c}</option>`).join("");fill();$("#ty").onchange=fill;
+ $("#add").onclick=()=>act(()=>api("transactions",{type:val("ty"),amount:val("am"),category:val("ca"),date:val("dt"),note:val("no")}),"Transaction saved");
+ document.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>confirm("Delete this transaction?")&&act(()=>api(`transactions/${b.dataset.d}/delete`,{}),"Deleted"))},
+
+async budgets(){const s=await api("summary?month="+month);
+ $("#main").innerHTML=`<div class="card"><h3>Set a budget for ${month}</h3><div class="form"><div><label for="bc">Category</label><input id="bc" list="cl"><datalist id="cl">${CATS.expense.map(c=>`<option>${c}</option>`).join("")}</datalist></div>
+ <div><label for="bl">Monthly limit (KES)</label><input id="bl" type="number" min="0"></div><button id="sb">Save budget</button></div></div>
+ <div class="card">${s.budgets.map(b=>{const p=b.spent/b.limit_amt*100;return `<div class="row"><div><span>${esc(b.category)} <button class="x" data-b="${b.id}" aria-label="Remove budget">✕</button></span><span>${K(b.spent)} of ${K(b.limit_amt)}${p>100?` — over by ${K(b.spent-b.limit_amt)}`:p>=80?" — nearly used up":""}</span></div>
+ <div class="bar ${p>100?"over":p>=80?"warn":""}"><i style="width:${Math.min(100,p)}%"></i></div></div>`}).join("")||'<p class="mute">No budgets for this month. Set a limit above to start tracking against it.</p>'}</div>`;
+ $("#sb").onclick=()=>act(()=>api("budgets",{category:val("bc"),limit:val("bl"),month}),"Budget saved");
+ document.querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>act(()=>api(`budgets/${b.dataset.b}/delete`,{}),"Budget removed"))},
+
+async goals(){const g=await api("goals");
+ $("#main").innerHTML=`<div class="card"><h3>New goal</h3><div class="form"><div><label for="gn">Goal</label><input id="gn" placeholder="e.g. School fees term 1"></div>
+ <div><label for="gt">Target (KES)</label><input id="gt" type="number" min="0"></div><div><label for="gd">Target date</label><input id="gd" type="date"></div><button id="sg">Create goal</button></div></div>
+ <div class="grid">${g.map(x=>{const p=Math.min(100,x.saved/x.target*100);return `<div class="card"><div style="display:flex;justify-content:space-between"><h3>${esc(x.name)}</h3><button class="x" data-g="${x.id}" aria-label="Delete goal">✕</button></div>
+ <p class="mute" style="margin:.2rem 0 .6rem">${K(x.saved)} of ${K(x.target)}${x.deadline?` by ${x.deadline}`:""}${p>=100?" — reached!":""}</p><div class="bar"><i style="width:${p}%"></i></div>
+ <div class="form" style="margin-top:.8rem;grid-template-columns:1fr auto"><input type="number" min="0" id="a${x.id}" placeholder="Amount saved" aria-label="Amount to add"><button data-a="${x.id}">Add savings</button></div></div>`}).join("")||'<p class="mute">No goals yet. Create one above to start saving toward it.</p>'}</div>`;
+ $("#sg").onclick=()=>act(()=>api("goals",{name:val("gn"),target:val("gt"),deadline:val("gd")}),"Goal created");
+ document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>act(()=>api(`goals/${b.dataset.a}/add`,{amount:val("a"+b.dataset.a)}),"Savings added"));
+ document.querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>confirm("Delete this goal?")&&act(()=>api(`goals/${b.dataset.g}/delete`,{}),"Goal deleted"))}};
+render();
+</script></body></html>
